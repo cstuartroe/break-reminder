@@ -5,12 +5,15 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 import subprocess
+from typing import List
+
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google_quickstart import get_service
 import sys
 from config import Config
 
 START_DATE = datetime(year=2022, month=4, day=3)
+DT_FORMAT = '%Y-%m-%d %H:%M'
 
 
 class Lock:
@@ -46,6 +49,7 @@ class BreakReminder:
 
         self.last_uploaded_time = 0
         self.service = None
+        self.raised_reminders = set()
 
     def loop(self):
         lock = Lock.acquire(self.name)
@@ -63,9 +67,13 @@ class BreakReminder:
             if (time.time() - self.last_uploaded_time) > self.config.break_interval:
                 self.service = get_service()
                 self.download(self.current_file())
+                self.reckon_reminders()
 
             activity = self.activity_prompt()
-            self.log_activity(activity)
+            raised = self.raise_reminders()
+            completed = self.reminder_prompt()
+
+            self.log_activity(activity, raised, completed)
 
             self.look_away_reminder()
             look_away_start = time.time()
@@ -96,18 +104,87 @@ class BreakReminder:
 
         return str(Path(folderpath, "activity.json"))
 
-    def log_activity(self, activity: str):
-        dt = datetime.utcnow()
-
+    def get_today(self):
         with open(self.current_file(), 'r') as fh:
             contents = json.load(fh)
 
+        return contents
+
+    def reckon_reminders(self):
+        contents = self.get_today()
+
+        self.raised_reminders = set()
+
+        for item in contents['activity']:
+            for raised in item['raised']:
+                self.raised_reminders.add(raised)
+
+            for completed in item['completed']:
+                self.raised_reminders.remove(completed)
+
+    def raise_reminders(self):
+        raised = set()
+
+        for reminder, times in self.config.reminders.items():
+            if reminder in self.raised_reminders:
+                continue
+
+            now = datetime.now()
+            last_checked = datetime.strptime(self.get_today()['activity'][-1]['time'], DT_FORMAT)
+
+            for time_string in times:
+                hours, minutes = time_string.split(':')
+
+                today_time = datetime(
+                    year=now.year,
+                    month=now.month,
+                    day=now.day,
+                    hour=int(hours),
+                    minute=int(minutes),
+                )
+
+                if last_checked < today_time < now:
+                    raised.add(reminder)
+
+        self.raised_reminders = self.raised_reminders | raised
+
+        return list(raised)
+
+    def reminder_prompt(self):
+        reminders = list(self.raised_reminders)
+
+        if len(reminders) == 0:
+            return []
+
+        results = subprocess.run([
+            "zenity",
+            "--forms",
+            "--text=Which tasks have been completed? Type 'done' to indicate completion.",
+            "--title=break reminder",
+            *[
+                f"--add-entry={reminder}"
+                for reminder in reminders
+            ],
+        ], stdout=subprocess.PIPE, text=True).stdout.strip().split('|')
+
+        print(results)
+
+        return [
+            reminders[i]
+            for i in range(len(reminders))
+            if results[i].lower() == 'done'
+        ]
+
+    def log_activity(self, activity: str, raised: List[str], completed: List[str]):
+        dt = datetime.utcnow()
+        contents = self.get_today()
+
         contents['activity'].append({
-            'time': dt.strftime('%Y-%m-%d %H:%M'),
+            'time': dt.strftime(DT_FORMAT),
             'activity': activity,
             'device': f"{os.getlogin()}@{socket.gethostname()}",
-            'raised': [],
-            'completed': [],
+            'raised': raised,
+            'completed': completed,
         })
 
         with open(self.current_file(), 'w') as fh:
