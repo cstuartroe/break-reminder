@@ -1,4 +1,6 @@
+import json
 import os.path
+import socket
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -100,13 +102,24 @@ class BreakReminder:
         folderpath = Path(f"Activity/{dt.year}/{dt.month}/{dt.day}")
         folderpath.mkdir(parents=True, exist_ok=True)
 
-        return str(Path(folderpath, "activity.log"))
+        return str(Path(folderpath, "activity.json"))
 
     def log_activity(self, activity: str):
         dt = datetime.utcnow()
 
-        with open(self.current_file(), 'a') as fh:
-            fh.write(f"{dt.strftime('%Y-%m-%d %H:%M')} | {activity}\n")
+        with open(self.current_file(), 'r') as fh:
+            contents = json.load(fh)
+
+        contents['activity'].append({
+            'time': dt.strftime('%Y-%m-%d %H:%M'),
+            'activity': activity,
+            'device': f"{os.getlogin()}@{socket.gethostname()}",
+            'raised': [],
+            'completed': [],
+        })
+
+        with open(self.current_file(), 'w') as fh:
+            json.dump(contents, fh, indent=2, sort_keys=True)
 
     def look_away_reminder(self):
         subprocess.run([
