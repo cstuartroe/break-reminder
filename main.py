@@ -167,13 +167,16 @@ class BreakReminder:
             ],
         ], stdout=subprocess.PIPE, text=True).stdout.strip().split('|')
 
-        print(results)
-
-        return [
+        completed = [
             reminders[i]
             for i in range(len(reminders))
             if results[i].lower() == 'done'
         ]
+
+        for reminder in completed:
+            self.raised_reminders.remove(reminder)
+
+        return completed
 
     def log_activity(self, activity: str, raised: List[str], completed: List[str]):
         dt = datetime.utcnow()
