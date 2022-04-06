@@ -8,9 +8,8 @@ import subprocess
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google_quickstart import get_service
 import sys
+from config import Config
 
-DEFAULT_BREAK_INTERVAL = 15*60  # 15 minutes
-DEFAULT_LOOK_AWAY_TIME = 60
 START_DATE = datetime(year=2022, month=4, day=3)
 
 
@@ -37,20 +36,13 @@ class Lock:
 
 
 class BreakReminder:
-    def __init__(
-            self,
-            name: str,
-            break_interval: int = DEFAULT_BREAK_INTERVAL,
-            check_interval: int = 30,
-            look_away_time: int = DEFAULT_LOOK_AWAY_TIME,
-    ):
+    def __init__(self, name: str, check_interval: int = 30):
         self.name = name
 
-        assert check_interval <= break_interval/2
-        self.break_interval = break_interval
-        self.check_interval = check_interval
+        self.config = Config(self.name)
 
-        self.look_away_time = look_away_time
+        assert check_interval <= self.config.break_interval/2
+        self.check_interval = check_interval
 
         self.last_uploaded_time = 0
         self.service = None
@@ -68,7 +60,7 @@ class BreakReminder:
         while True:
             self.sleep_until_break()
 
-            if (time.time() - self.last_uploaded_time) > self.break_interval:
+            if (time.time() - self.last_uploaded_time) > self.config.break_interval:
                 self.service = get_service()
                 self.download(self.current_file())
 
@@ -80,7 +72,7 @@ class BreakReminder:
 
             self.upload(self.current_file())
             self.last_uploaded_time = time.time()
-            time.sleep(look_away_start + self.look_away_time - time.time())
+            time.sleep(look_away_start + self.config.look_away_time - time.time())
 
             self.look_away_end()
 
@@ -125,7 +117,7 @@ class BreakReminder:
         subprocess.run([
             "zenity",
             "--info",
-            f"--text=Look away from your screen for {self.look_away_time} seconds.",
+            f"--text=Look away from your screen for {self.config.look_away_time} seconds.",
             "--title=break reminder",
         ])
 
@@ -137,7 +129,7 @@ class BreakReminder:
         ])
 
     def sleep_until_break(self):
-        while (-time.time() % self.break_interval) >= self.check_interval:
+        while (-time.time() % self.config.break_interval) >= self.check_interval:
             time.sleep(-time.time() % self.check_interval)
 
         time.sleep(self.check_interval)
