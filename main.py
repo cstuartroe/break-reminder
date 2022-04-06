@@ -51,7 +51,7 @@ class BreakReminder:
         self.look_away_time = look_away_time
 
         self.last_uploaded_time = 0
-        self.service = get_service()
+        self.service = None
 
     def loop(self):
         lock = Lock.acquire(self.name)
@@ -66,7 +66,8 @@ class BreakReminder:
         while True:
             self.sleep_until_break()
 
-            if (time.time() - self.last_uploaded_time) > (self.break_interval * 1.1):
+            if (time.time() - self.last_uploaded_time) > self.break_interval:
+                self.service = get_service()
                 self.download(self.current_file())
 
             activity = self.activity_prompt()
@@ -76,6 +77,7 @@ class BreakReminder:
             look_away_start = time.time()
 
             self.upload(self.current_file())
+            self.last_uploaded_time = time.time()
             time.sleep(look_away_start + self.look_away_time - time.time())
 
             self.look_away_end()
@@ -203,6 +205,8 @@ class BreakReminder:
                 status, done = downloader.next_chunk()
 
     def upload_all(self):
+        self.service = get_service()
+
         date = START_DATE
 
         while date < datetime.utcnow():
@@ -214,6 +218,8 @@ class BreakReminder:
             date += timedelta(days=1)
 
     def download_all(self):
+        self.service = get_service()
+
         date = START_DATE
 
         while date < datetime.utcnow():
